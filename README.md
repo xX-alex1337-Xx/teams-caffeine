@@ -29,8 +29,9 @@ leave an open PowerShell window, consume ~50–80 MB of RAM, and can be terminat
 
 **Teams Caffeine** replaces this with a native, tiny (~280 KB) Windows background utility that lives unobtrusively in your system tray:
 1. Emulates `{F15}` keypresses via native Win32 `SendInput` every 30 seconds (F15 is completely harmless and does not affect normal typing or active applications).
-2. Asserts Windows Power Execution State (`SetThreadExecutionState`) to prevent screen lock, screensavers, or sleep mode while active.
-3. Consumes **< 2 MB RAM** and virtually **0% CPU**.
+2. Performs a subtle **1-pixel relative mouse movement** forth and back (`+1px`, then `-1px`) every 30 seconds for environments that monitor mouse telemetry. Net displacement is zero, with zero cursor drift.
+3. Asserts Windows Power Execution State (`SetThreadExecutionState`) to prevent screen lock, screensavers, or sleep mode while active.
+4. Consumes **< 2 MB RAM** and virtually **0% CPU**.
 
 ---
 
@@ -70,33 +71,25 @@ Download or build `teams-caffeine.exe` and place it anywhere you like. Simply do
 
 ## ⌨️ How It Works Under the Hood
 
-### 1. Teams Activity Emulation (`VK_F15`)
-Microsoft Teams monitors Windows user idle time (`GetLastInputInfo`). Simulating an invisible, non-printable key like **F15** (`0x7E`) tells Windows and Teams that human input occurred without interfering with your typing, video playback, or work.
+### 1. Teams Activity Emulation (`VK_F15` & 1px Mouse Movement)
+Microsoft Teams monitors Windows user idle time (`GetLastInputInfo`). Teams Caffeine uses a dual-action trigger every 30 seconds:
+- Simulates an invisible, non-printable key like **F15** (`0x7E`).
+- Jiggles the mouse cursor by **1 pixel right and 1 pixel left** using relative offsets (`MOUSEEVENTF_MOVE`).
 
 ```rust
-let inputs = [
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: VK_F15,
-                dwFlags: KEYBD_EVENT_FLAGS(0), // Key Down
-                ..
-            },
-        },
-    },
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: VK_F15,
-                dwFlags: KEYEVENTF_KEYUP,     // Key Up
-                ..
-            },
-        },
-    },
+// 1) Simulate F15 keypress
+let key_inputs = [
+    INPUT { r#type: INPUT_KEYBOARD, Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_F15, .. } } },
+    INPUT { r#type: INPUT_KEYBOARD, Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: VK_F15, dwFlags: KEYEVENTF_KEYUP, .. } } },
 ];
-SendInput(&inputs, ...);
+SendInput(&key_inputs, ...);
+
+// 2) Jiggle mouse 1px forth and back (net displacement 0)
+let mouse_inputs = [
+    INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi: MOUSEINPUT { dx: 1, dy: 0, dwFlags: MOUSEEVENTF_MOVE, .. } } },
+    INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi: MOUSEINPUT { dx: -1, dy: 0, dwFlags: MOUSEEVENTF_MOVE, .. } } },
+];
+SendInput(&mouse_inputs, ...);
 ```
 
 ### 2. Display & System Sleep Prevention

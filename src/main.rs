@@ -13,8 +13,8 @@ use windows::Win32::System::Registry::{
 };
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VK_F15,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_KEYUP, MOUSEEVENTF_MOVE, MOUSEINPUT, VK_F15,
 };
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
@@ -85,6 +85,46 @@ fn send_f15_key() {
     unsafe {
         SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
     }
+}
+
+fn send_mouse_jiggle() {
+    let inputs = [
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: 1,
+                    dy: 0,
+                    mouseData: 0,
+                    dwFlags: MOUSEEVENTF_MOVE,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        },
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: -1,
+                    dy: 0,
+                    mouseData: 0,
+                    dwFlags: MOUSEEVENTF_MOVE,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        },
+    ];
+
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+fn keep_awake_tick() {
+    send_f15_key();
+    send_mouse_jiggle();
 }
 
 fn apply_execution_state(active: bool) {
@@ -175,7 +215,7 @@ fn update_tray_visuals(active: bool) {
             };
 
             let tip = if active {
-                "Teams Caffeine: Active (F15 every 30s)"
+                "Teams Caffeine: Active (F15 + 1px mouse every 30s)"
             } else {
                 "Teams Caffeine: Paused"
             };
@@ -202,7 +242,7 @@ fn toggle_active(hwnd: HWND) {
     let new_state = !current_state;
     apply_execution_state(new_state);
     if new_state {
-        send_f15_key();
+        keep_awake_tick();
         unsafe {
             // Reset timer so the next interval starts fresh 30 seconds from now
             SetTimer(hwnd, TIMER_KEEP_AWAKE, KEEP_AWAKE_INTERVAL_MS, None);
@@ -236,7 +276,7 @@ unsafe extern "system" fn wndproc(
                 hIcon: h_icon_active,
                 ..Default::default()
             };
-            set_tooltip(&mut nid, "Teams Caffeine: Active (F15 every 30s)");
+            set_tooltip(&mut nid, "Teams Caffeine: Active (F15 + 1px mouse every 30s)");
 
             let _ = Shell_NotifyIconW(NIM_ADD, &nid);
 
@@ -252,7 +292,7 @@ unsafe extern "system" fn wndproc(
 
             // Initial keep-awake kick
             apply_execution_state(true);
-            send_f15_key();
+            keep_awake_tick();
 
             LRESULT(0)
         }
@@ -267,7 +307,7 @@ unsafe extern "system" fn wndproc(
 
                 if is_active {
                     apply_execution_state(true);
-                    send_f15_key();
+                    keep_awake_tick();
                 }
             }
             LRESULT(0)
