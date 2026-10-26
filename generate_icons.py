@@ -16,9 +16,9 @@ def draw_caffeine_icon(size: int, active: bool = True) -> Image.Image:
     if active:
         cup_color = (255, 255, 255, 245)
         coffee_color = (212, 138, 54, 255)       # warm espresso/coffee
-        steam_color = (76, 217, 100, 220)        # green steam / energy indicator (Teams Green)
-        badge_bg = (34, 197, 94, 255)            # glowing green active badge
-        badge_border = (15, 23, 42, 255)
+        steam_color = (255, 255, 255, 220)        # authentic white steam
+        badge_bg = (34, 197, 94, 255)            # solid vibrant Teams green badge
+        badge_border = (15, 23, 42, 255)         # dark high-contrast border
         rim_color = (240, 240, 245, 255)
     else:
         cup_color = (160, 160, 170, 200)
@@ -64,7 +64,7 @@ def draw_caffeine_icon(size: int, active: bool = True) -> Image.Image:
     rim_h = int(dim * 0.10)
     draw.ellipse([cup_left + inner_pad, cup_top - rim_h // 2, cup_right - inner_pad, cup_top + rim_h // 2], fill=coffee_color)
 
-    # Steam / Aroma lines (if active)
+    # Steam / Aroma lines (if active, in clean white)
     if active:
         steam_w = max(int(dim * 0.05), 2)
         # Left steam curve
@@ -91,7 +91,7 @@ def draw_caffeine_icon(size: int, active: bool = True) -> Image.Image:
         ]
         draw.line(steam3_pts, fill=steam_color, width=steam_w, joint="curve")
 
-    # Status Indicator Badge (Bottom right or top right)
+    # Status Indicator Badge (Bottom right)
     badge_size = int(dim * 0.34)
     bx2 = int(dim * 0.96)
     by2 = int(dim * 0.96)
@@ -100,15 +100,11 @@ def draw_caffeine_icon(size: int, active: bool = True) -> Image.Image:
     
     # Outer dark border to pop against tray dark/light backgrounds
     draw.ellipse([bx1 - 2, by1 - 2, bx2 + 2, by2 + 2], fill=badge_border)
+    # Solid circle: Solid Teams Green when active, Solid Gray when paused
     draw.ellipse([bx1, by1, bx2, by2], fill=badge_bg)
 
-    # Inner symbol on badge: checkmark / dot if active, pause bars if paused
-    if active:
-        # Green status dot / lightning or inner bright dot
-        inner_m = int(badge_size * 0.22)
-        draw.ellipse([bx1 + inner_m, by1 + inner_m, bx2 - inner_m, by2 - inner_m], fill=(255, 255, 255, 240))
-    else:
-        # Pause bars ||
+    # When paused, draw white pause bars || on top of the gray badge
+    if not active:
         bar_w = max(int(badge_size * 0.14), 2)
         bar_h = int(badge_size * 0.48)
         bar_y1 = by1 + int((badge_size - bar_h) / 2)
@@ -134,7 +130,7 @@ def main():
         sizes=[(s, s) for s in sizes],
         append_images=active_images[1:]
     )
-    print("Generated assets/icon.ico")
+    print("Generated assets/icon.ico (White steam, solid green status dot)")
 
     # Generate paused icon
     paused_images = [draw_caffeine_icon(s, active=False) for s in sizes]

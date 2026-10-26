@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, OnceLock};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Power::{
     SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
@@ -23,9 +23,9 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
     DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, PostMessageW, PostQuitMessage,
-    RegisterClassW, SetForegroundWindow, SetTimer, TrackPopupMenuEx, TranslateMessage,
-    CS_HREDRAW, CS_VREDRAW, HICON, HMENU, MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_SEPARATOR,
-    MF_STRING, MF_UNCHECKED, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
+    RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, SetTimer, TrackPopupMenuEx,
+    TranslateMessage, CS_HREDRAW, CS_VREDRAW, HICON, HMENU, MF_CHECKED, MF_DISABLED, MF_GRAYED,
+    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON,
     WINDOW_EX_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
     WM_NULL, WM_RBUTTONUP, WM_TIMER, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
@@ -52,6 +52,7 @@ unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
 
 static STATE: OnceLock<Mutex<AppState>> = OnceLock::new();
+static WM_TASKBARCREATED: OnceLock<u32> = OnceLock::new();
 
 fn send_f15_key() {
     let inputs = [
@@ -187,7 +188,7 @@ fn update_tray_visuals(active: bool) {
     }
 }
 
-fn toggle_active() {
+fn toggle_active(hwnd: HWND) {
     let current_state = if let Some(state_lock) = STATE.get() {
         if let Ok(state) = state_lock.lock() {
             state.active
@@ -202,6 +203,10 @@ fn toggle_active() {
     apply_execution_state(new_state);
     if new_state {
         send_f15_key();
+        unsafe {
+            // Reset timer so the next interval starts fresh 30 seconds from now
+            SetTimer(hwnd, TIMER_KEEP_AWAKE, KEEP_AWAKE_INTERVAL_MS, None);
+        }
     }
     update_tray_visuals(new_state);
 }
@@ -273,7 +278,7 @@ unsafe extern "system" fn wndproc(
             match event {
                 WM_LBUTTONUP | WM_LBUTTONDBLCLK => {
                     // Left-click / double-click toggles active status
-                    toggle_active();
+                    toggle_active(hwnd);
                 }
                 WM_RBUTTONUP => {
                     // Context Menu
@@ -328,7 +333,7 @@ unsafe extern "system" fn wndproc(
             let cmd_id = (wparam.0 & 0xFFFF) as usize;
             match cmd_id {
                 ID_TRAY_TOGGLE => {
-                    toggle_active();
+                    toggle_active(hwnd);
                 }
                 ID_TRAY_AUTOSTART => {
                     let currently_enabled = is_autostart_registered();
@@ -356,7 +361,20 @@ unsafe extern "system" fn wndproc(
             LRESULT(0)
         }
 
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        _ => {
+            // Re-add tray icon if Windows Explorer / Taskbar restarted
+            if let Some(&taskbar_msg) = WM_TASKBARCREATED.get() {
+                if taskbar_msg != 0 && msg == taskbar_msg {
+                    if let Some(state_lock) = STATE.get() {
+                        if let Ok(state) = state_lock.lock() {
+                            let _ = Shell_NotifyIconW(NIM_ADD, &state.nid);
+                        }
+                    }
+                    return LRESULT(0);
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
     }
 }
 
@@ -365,9 +383,20 @@ fn main() {
         // Prevent running multiple instances
         let mutex_name = w!("Local\\TeamsCaffeine_SingleInstance_Mutex");
         let mutex = CreateMutexW(None, true, mutex_name);
-        if mutex.is_err() || windows::Win32::Foundation::GetLastError() == windows::Win32::Foundation::ERROR_ALREADY_EXISTS {
-            return;
-        }
+        let mutex_handle = match mutex {
+            Ok(h) => {
+                if windows::Win32::Foundation::GetLastError() == windows::Win32::Foundation::ERROR_ALREADY_EXISTS {
+                    let _ = CloseHandle(h);
+                    return;
+                }
+                h
+            }
+            Err(_) => return,
+        };
+
+        // Register TaskbarCreated message to survive Explorer restarts
+        let taskbar_msg = RegisterWindowMessageW(w!("TaskbarCreated"));
+        let _ = WM_TASKBARCREATED.set(taskbar_msg);
 
         let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0);
         let class_name = w!("TeamsCaffeineTrayClass");
@@ -398,6 +427,7 @@ fn main() {
         );
 
         if hwnd.is_err() {
+            let _ = CloseHandle(mutex_handle);
             return;
         }
 
@@ -406,5 +436,7 @@ fn main() {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+
+        let _ = CloseHandle(mutex_handle);
     }
 }

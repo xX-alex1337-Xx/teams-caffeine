@@ -38,7 +38,7 @@ leave an open PowerShell window, consume ~50–80 MB of RAM, and can be terminat
 
 - **🚀 Ultra Lightweight**: Standalone ~280 KB native executable, no heavy frameworks, no Electron, no WebView.
 - **☕ Visual Tray Feedback**:
-  - **Active State**: Colorful coffee mug with steam and bright green indicator dot.
+  - **Active State**: Colorful coffee mug with clean white steam and a solid green indicator badge.
   - **Paused State**: Dimmed grayscale coffee mug with pause icon.
 - **⚡ Instant Toggle**: Left-click or double-click the tray icon to quickly toggle between **Active** and **Paused**.
 - **📋 Context Menu (Right-Click)**:
